@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Popslate",
-  "version": "0.1.0",
   "identifier": "io.github.dungnt7.popslate",
   "build": {
     "frontendDist": "../ui"
@@ -26,11 +25,14 @@
       {
         "label": "settings",
         "url": "settings.html",
-        "title": "Popslate settings",
+        "title": "Popslate Settings",
         "visible": false,
-        "width": 420,
-        "height": 320,
-        "resizable": false
+        "width": 400,
+        "height": 280,
+        "resizable": false,
+        "center": true,
+        "maximizable": false,
+        "minimizable": false
       }
     ],
     "security": {

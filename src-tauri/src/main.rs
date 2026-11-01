@@ -32,6 +32,28 @@ fn tray_icon(scale: f64) -> Image<'static> {
     Image::from_bytes(png).expect("bundled tray icon")
 }
 
+/// From Cargo.toml: the one place for version and homepage.
+#[derive(serde::Serialize)]
+struct About {
+    version: &'static str,
+    homepage: &'static str,
+}
+
+#[tauri::command]
+fn about() -> About {
+    About {
+        version: env!("CARGO_PKG_VERSION"),
+        homepage: env!("CARGO_PKG_HOMEPAGE"),
+    }
+}
+
+/// Opens the fixed homepage in the default browser; never a URL coming from the page.
+#[tauri::command]
+fn open_homepage() {
+    // ponytail: Windows only; switch to tauri-plugin-opener when other platforms come.
+    let _ = std::process::Command::new("explorer").arg(env!("CARGO_PKG_HOMEPAGE")).spawn();
+}
+
 fn show_settings(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("settings") {
         let _ = w.show();
@@ -89,20 +111,22 @@ fn main() {
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![popup::popup_fit, popup::popup_hide])
+        .invoke_handler(tauri::generate_handler![
+            popup::popup_fit,
+            popup::popup_hide,
+            config::get_settings,
+            config::set_settings,
+            about,
+            open_homepage
+        ])
         .setup(move |app| {
             let cfg = config::load(app.handle());
-
-            // Release only: a dev build must not register target/debug exe to run at login.
-            #[cfg(not(debug_assertions))]
-            {
-                use tauri_plugin_autostart::ManagerExt;
-                let launcher = app.autolaunch();
-                let _ = if cfg.autostart { launcher.enable() } else { launcher.disable() };
-            }
-            // Fails when another app (e.g. pot) owns the same hotkey.
+            let _ = config::apply_autostart(app.handle(), cfg.autostart);
+            // Fails when another app (e.g. pot) owns the same hotkey: open settings, which
+            // shows the problem and lets the user pick another one.
             if let Err(e) = app.global_shortcut().register(cfg.hotkey.as_str()) {
                 eprintln!("[hotkey] cannot register {}: {e}", cfg.hotkey);
+                show_settings(app.handle());
             }
             app.manage(Mutex::new(cfg));
             let handle = app.handle().clone();

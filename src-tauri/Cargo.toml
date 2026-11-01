@@ -2,6 +2,10 @@
 name = "popslate"
 version = "0.1.0"
 edition = "2021"
+description = "Select text anywhere, press a hotkey, read the translation"
+authors = ["Dung Nguyen"]
+homepage = "https://github.com/dungnt7/popslate"
+license = "MIT"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
