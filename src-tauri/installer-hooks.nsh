@@ -1,5 +1,10 @@
-; The app writes its own "start with Windows" entry (tauri-plugin-autostart), which the
-; generated uninstaller does not know about. Remove it so no entry points to a deleted exe.
+; App data lives in ".popslate" folders (set in code, see config.rs), not in the identifier
+; folders the generated uninstaller deletes. Remove them when the user ticks "delete app data".
 !macro NSIS_HOOK_POSTUNINSTALL
-  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Popslate"
+  ${If} $DeleteAppDataCheckboxState = 1
+  ${AndIf} $UpdateMode <> 1
+    SetShellVarContext current
+    RmDir /r "$APPDATA\.popslate"
+    RmDir /r "$LOCALAPPDATA\.popslate"
+  ${EndIf}
 !macroend

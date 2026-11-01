@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::{
     sync::{
         atomic::{AtomicU64, Ordering},
-        Mutex,
+        Mutex, PoisonError,
     },
     time::Duration,
 };
@@ -40,7 +40,7 @@ struct Msg {
 /// Starts a new request: remembers where the cursor is. Call when the hotkey fires.
 pub fn begin(app: &AppHandle) -> u64 {
     if let Ok(p) = app.cursor_position() {
-        *ANCHOR.lock().unwrap() = (p.x, p.y);
+        *ANCHOR.lock().unwrap_or_else(PoisonError::into_inner) = (p.x, p.y);
     }
     LATEST.fetch_add(1, Ordering::SeqCst) + 1
 }
@@ -57,8 +57,9 @@ pub fn popup_fit(app: AppHandle, id: u64, width: f64, height: f64) {
         return;
     }
     let Some(win) = app.get_webview_window("popup") else { return };
-    let anchor = *ANCHOR.lock().unwrap();
-    let _ = place(&win, anchor, width, height);
+    let anchor = *ANCHOR.lock().unwrap_or_else(PoisonError::into_inner);
+    // Sizes come from the page: keep NaN, zero or negative values from making a 0 px window.
+    let _ = place(&win, anchor, width.max(1.0), height.max(1.0));
     let _ = win.show();
     // Allowed: Windows lets the process that received the hotkey take the foreground.
     let _ = win.set_focus();
@@ -79,6 +80,7 @@ pub fn hide_if_inactive(win: Window) {
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_millis(50));
         let Ok(own) = win.hwnd() else { return };
+        // SAFETY: no preconditions.
         if unsafe { GetForegroundWindow() }.0 as isize != own.0 as isize {
             let _ = win.hide();
         }

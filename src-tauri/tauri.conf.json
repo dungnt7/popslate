@@ -22,7 +22,8 @@
         "minimizable": false,
         "shadow": true,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu",
-        "title": "Popslate"
+        "title": "Popslate",
+        "create": false
       },
       {
         "label": "settings",

@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf, sync::Mutex};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::{Mutex, PoisonError},
+};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
@@ -23,19 +27,40 @@ impl Default for Config {
     }
 }
 
+/// App data folder name, used under %APPDATA% (settings) and %LOCALAPPDATA% (WebView2 data).
+/// Chosen over Tauri's default (the bundle identifier). installer-hooks.nsh must match.
+const DIR: &str = ".popslate";
+
 fn path(app: &AppHandle) -> PathBuf {
     app.path()
-        .app_config_dir()
+        .config_dir()
         .expect("no config dir")
+        .join(DIR)
         .join("config.json")
 }
 
-/// Missing or broken file falls back to defaults; unknown/missing fields use defaults.
+/// WebView2 data folder. Every window must use the same one.
+pub fn webview_dir(app: &AppHandle) -> PathBuf {
+    app.path().local_data_dir().expect("no local data dir").join(DIR)
+}
+
+/// Missing file: defaults. Unknown or missing fields: defaults for those fields.
 pub fn load(app: &AppHandle) -> Config {
-    fs::read_to_string(path(app))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+    load_from(&path(app))
+}
+
+/// A file that is not valid JSON (e.g. a typo while editing by hand) is moved aside to
+/// `config.json.bad` before defaults are used, so the next save cannot overwrite the edit.
+fn load_from(p: &Path) -> Config {
+    let Ok(s) = fs::read_to_string(p) else { return Config::default() };
+    serde_json::from_str(&s).unwrap_or_else(|e| {
+        let bad = p.with_extension("json.bad");
+        eprintln!("[config] {} is invalid ({e}); using defaults, kept as {}", p.display(), bad.display());
+        if let Err(e) = fs::rename(p, &bad) {
+            eprintln!("[config] cannot keep the invalid file: {e}");
+        }
+        Config::default()
+    })
 }
 
 fn save(app: &AppHandle, cfg: &Config) -> std::io::Result<()> {
@@ -70,7 +95,7 @@ pub struct Settings {
 // not run on the main thread themselves.
 #[tauri::command]
 pub async fn get_settings(app: AppHandle) -> Settings {
-    let config = app.state::<Mutex<Config>>().lock().unwrap().clone();
+    let config = app.state::<Mutex<Config>>().lock().unwrap_or_else(PoisonError::into_inner).clone();
     let hotkey_ok = app.global_shortcut().is_registered(config.hotkey.as_str());
     Settings { config, hotkey_ok }
 }
@@ -80,7 +105,7 @@ pub async fn get_settings(app: AppHandle) -> Settings {
 #[tauri::command]
 pub async fn set_settings(app: AppHandle, new: Config) -> Result<(), String> {
     let state = app.state::<Mutex<Config>>();
-    let mut cur = state.lock().unwrap();
+    let mut cur = state.lock().unwrap_or_else(PoisonError::into_inner);
     let mut err = None;
 
     let shortcuts = app.global_shortcut();
@@ -110,4 +135,37 @@ pub async fn set_settings(app: AppHandle, new: Config) -> Result<(), String> {
     *cur = Config { hotkey, autostart, ..new };
     save(&app, &cur).map_err(|e| format!("Couldn't save settings: {e}"))?;
     err.map_or(Ok(()), Err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_file_is_kept_aside_and_defaults_used() {
+        let dir = std::env::temp_dir().join(format!("popslate-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("config.json");
+        fs::write(&p, r#"{ "target_lang": "fr", }"#).unwrap(); // trailing comma: invalid JSON
+
+        let cfg = load_from(&p);
+
+        assert_eq!(cfg.target_lang, "vi");
+        assert!(!p.exists());
+        assert!(dir.join("config.json.bad").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn missing_fields_take_defaults() {
+        let dir = std::env::temp_dir().join(format!("popslate-test2-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("config.json");
+        fs::write(&p, r#"{ "target_lang": "fr" }"#).unwrap();
+
+        let cfg = load_from(&p);
+
+        assert_eq!((cfg.target_lang.as_str(), cfg.hotkey.as_str()), ("fr", "Alt+Q"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
 }

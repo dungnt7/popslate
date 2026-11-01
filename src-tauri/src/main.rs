@@ -8,14 +8,14 @@ mod translate;
 
 use popup::Payload;
 use std::{
-    sync::{mpsc, Mutex},
+    sync::{mpsc, Mutex, PoisonError},
     time::Instant,
 };
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Manager, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -51,16 +51,25 @@ fn about() -> About {
 #[tauri::command]
 fn open_homepage() {
     // ponytail: Windows only; switch to tauri-plugin-opener when other platforms come.
-    let _ = std::process::Command::new("explorer").arg(env!("CARGO_PKG_HOMEPAGE")).spawn();
+    if let Err(e) = std::process::Command::new("explorer").arg(env!("CARGO_PKG_HOMEPAGE")).spawn() {
+        eprintln!("[about] cannot open homepage: {e}");
+    }
 }
 
-/// Settings is built on demand and destroyed on close (config: "create": false): each
-/// open window costs a WebView2 renderer process, and settings is rarely open.
+/// Builds a window from its tauri.conf.json entry (all are "create": false). Built in code
+/// so every window gets the same WebView2 data folder.
+fn build_window(app: &AppHandle, label: &str) -> tauri::Result<WebviewWindow> {
+    let cfg = app.config().app.windows.iter().find(|w| w.label == label).expect("window config");
+    WebviewWindowBuilder::from_config(app, cfg)?
+        .data_directory(config::webview_dir(app))
+        .build()
+}
+
+/// Settings is built on demand and destroyed on close: each open window costs a WebView2
+/// renderer process, and settings is rarely open.
 fn show_settings(app: &AppHandle) {
     let win = app.get_webview_window("settings").or_else(|| {
-        let cfg = app.config().app.windows.iter().find(|w| w.label == "settings")?;
-        WebviewWindowBuilder::from_config(app, cfg)
-            .and_then(|b| b.build())
+        build_window(app, "settings")
             .inspect_err(|e| eprintln!("[settings] cannot open: {e}"))
             .ok()
     });
@@ -87,12 +96,20 @@ fn hotkey_worker(app: AppHandle, presses: mpsc::Receiver<()>) {
         };
         let t_sel = t0.elapsed();
         popup::update(&app, id, Payload::Loading { source: text.clone() });
-        let cfg = app.state::<Mutex<config::Config>>().lock().unwrap().clone();
+        let cfg = app.state::<Mutex<config::Config>>().lock().unwrap_or_else(PoisonError::into_inner).clone();
         let translator = app.state::<translate::Translator>().inner().clone();
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             let r = translator.translate(&text, &cfg.target_lang, &cfg.fallback_lang).await;
-            eprintln!("[hotkey] selection {t_sel:?}, total {:?}: {r:?}", t0.elapsed());
+            // Selected and translated text stays out of the log, except in debug builds.
+            let outcome = match &r {
+                Ok(t) => format!("ok {}->{} ({} chars)", t.src, t.tl, text.chars().count()),
+                Err(e) => format!("error: {e}"),
+            };
+            eprintln!("[hotkey] selection {t_sel:?}, total {:?}: {outcome}", t0.elapsed());
+            if cfg!(debug_assertions) {
+                eprintln!("[debug] {text:?} => {r:?}");
+            }
             let payload = match r {
                 Ok(result) => Payload::Done { source: text, result },
                 Err(message) => Payload::Error { source: text, message },
@@ -129,8 +146,11 @@ fn main() {
             open_homepage
         ])
         .setup(move |app| {
+            build_window(app.handle(), "popup")?;
             let cfg = config::load(app.handle());
-            let _ = config::apply_autostart(app.handle(), cfg.autostart);
+            if let Err(e) = config::apply_autostart(app.handle(), cfg.autostart) {
+                eprintln!("[autostart] {e}");
+            }
             // Fails when another app (e.g. pot) owns the same hotkey: open settings, which
             // shows the problem and lets the user pick another one.
             if let Err(e) = app.global_shortcut().register(cfg.hotkey.as_str()) {

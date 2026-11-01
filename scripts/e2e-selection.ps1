@@ -70,7 +70,7 @@ foreach ($c in $cases) {
     Start-Sleep 1
     $out = ((Get-Content $log | Select-Object -Skip $before) + $focus) -join "`n"
     $ok = $out.Contains($c[1]) -and ((Get-Clipboard -Raw).Trim() -eq "E2E SENTINEL")
-    if ($c[0] -ne "none") { $ok = $ok -and $out.Contains("nhanh") }   # "quick" in Vietnamese
+    if ($c[0] -ne "none") { $ok = $ok -and $out.Contains("ok en->vi") }   # translated, right languages
     if (-not $ok) { $failed++ }
     "{0} {1}`n    {2}" -f ($(if ($ok) { "PASS" } else { "FAIL" }), $c[0], $out.Replace("`n", "`n    "))
 }

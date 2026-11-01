@@ -28,26 +28,33 @@ const NO_CTRL_C_CLASSES: [&str; 2] = ["CASCADIA_HOSTING_WINDOW_CLASS", "ConsoleW
 
 /// Holds a COM object: create and use on one dedicated thread.
 pub struct Selector {
-    uia: IUIAutomation2,
+    /// None when UI Automation is unavailable: every capture then uses the Ctrl+C fallback.
+    uia: Option<IUIAutomation2>,
 }
 
 impl Selector {
+    /// Never fails: a missing UI Automation must not take the hotkey down with it.
     pub fn new() -> Self {
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-            let uia: IUIAutomation2 =
-                CoCreateInstance(&CUIAutomation8, None, CLSCTX_INPROC_SERVER).expect("UI Automation");
+        // SAFETY: first COM call on this thread; S_FALSE (already initialized) is fine too.
+        let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+        // SAFETY: COM is initialized on this thread (above).
+        let uia: Option<IUIAutomation2> = unsafe { CoCreateInstance(&CUIAutomation8, None, CLSCTX_INPROC_SERVER) }
+            .inspect_err(|e| eprintln!("[selection] UI Automation unavailable, Ctrl+C only: {e}"))
+            .ok();
+        if let Some(uia) = &uia {
             // Defaults are 2 s / 20 s; a hung app must not freeze us. Timeout = fallback.
-            let _ = uia.SetConnectionTimeout(300);
-            let _ = uia.SetTransactionTimeout(300);
-            Self { uia }
+            // SAFETY: `uia` is a live interface created on this thread.
+            let _ = unsafe { uia.SetConnectionTimeout(300) };
+            // SAFETY: as above.
+            let _ = unsafe { uia.SetTransactionTimeout(300) };
         }
+        Self { uia }
     }
 
     /// Call right after the hotkey fires. Returns None when nothing is selected.
     pub fn get(&self) -> Option<String> {
         mask_menu_key();
-        if let Some(t) = self.from_uia() {
+        if let Some(t) = self.uia_selection() {
             eprintln!("[selection] uia");
             return Some(t);
         }
@@ -61,9 +68,12 @@ impl Selector {
         t
     }
 
-    fn from_uia(&self) -> Option<String> {
+    fn uia_selection(&self) -> Option<String> {
+        let uia = self.uia.as_ref()?;
+        // SAFETY: plain COM calls on interfaces that stay alive for the whole block, made on
+        // the thread that created them. Errors come back as HRESULTs, mapped to None.
         unsafe {
-            let el = self.uia.GetFocusedElement().ok()?;
+            let el = uia.GetFocusedElement().ok()?;
             let pattern: IUIAutomationTextPattern = el.GetCurrentPatternAs(UIA_TextPatternId).ok()?;
             let ranges = pattern.GetSelection().ok()?;
             let mut parts = Vec::new();
@@ -97,12 +107,14 @@ fn clean(s: &str) -> Option<String> {
 
 fn foreground_class() -> String {
     let mut buf = [0u16; 128];
+    // SAFETY: `buf` is a valid writable buffer; a null window (no foreground) returns 0.
     let n = unsafe { GetClassNameW(GetForegroundWindow(), &mut buf) };
-    String::from_utf16_lossy(&buf[..n.max(0) as usize])
+    String::from_utf16_lossy(&buf[..usize::try_from(n).unwrap_or(0)])
 }
 
 fn is_down(vk: VIRTUAL_KEY) -> bool {
-    unsafe { GetAsyncKeyState(vk.0 as i32) < 0 }
+    // SAFETY: no preconditions.
+    unsafe { GetAsyncKeyState(i32::from(vk.0)) < 0 }
 }
 
 fn key(vk: VIRTUAL_KEY, up: bool) -> INPUT {
@@ -111,8 +123,9 @@ fn key(vk: VIRTUAL_KEY, up: bool) -> INPUT {
         Anonymous: INPUT_0 {
             ki: KEYBDINPUT {
                 wVk: vk,
-                // Some apps read scan codes, not virtual keys.
-                wScan: unsafe { MapVirtualKeyW(vk.0 as u32, MAPVK_VK_TO_VSC) } as u16,
+                // Some apps read scan codes, not virtual keys. Scan codes fit in 16 bits.
+                // SAFETY: no preconditions.
+                wScan: unsafe { MapVirtualKeyW(u32::from(vk.0), MAPVK_VK_TO_VSC) } as u16,
                 dwFlags: if up { KEYEVENTF_KEYUP } else { KEYBD_EVENT_FLAGS(0) },
                 time: 0,
                 dwExtraInfo: 0,
@@ -122,6 +135,7 @@ fn key(vk: VIRTUAL_KEY, up: bool) -> INPUT {
 }
 
 fn send(inputs: &[INPUT]) {
+    // SAFETY: `inputs` are fully initialized keyboard events; the size argument is INPUT's.
     unsafe { SendInput(inputs, size_of::<INPUT>() as i32) };
 }
 
@@ -138,12 +152,14 @@ fn from_clipboard() -> Option<String> {
         sleep(Duration::from_millis(5));
     }
 
+    // SAFETY: no preconditions.
     let before = unsafe { GetClipboardSequenceNumber() };
     let saved = clipboard::snapshot();
     send(&[key(VK_CONTROL, false), key(VK_C, false), key(VK_C, true), key(VK_CONTROL, true)]);
 
     // Sequence number changes on every clipboard write: no fixed sleep.
     let deadline = Instant::now() + Duration::from_millis(300);
+    // SAFETY: no preconditions.
     while unsafe { GetClipboardSequenceNumber() } == before {
         if Instant::now() > deadline {
             return None; // nothing copied, so nothing to restore
@@ -184,9 +200,11 @@ mod clipboard {
 
     pub type Snapshot = Vec<(u32, Vec<u8>)>;
 
+    /// Proof that this thread has the clipboard open; closes it when dropped.
     struct Open;
     impl Drop for Open {
         fn drop(&mut self) {
+            // SAFETY: an `Open` exists only after OpenClipboard succeeded.
             let _ = unsafe { CloseClipboard() };
         }
     }
@@ -194,6 +212,7 @@ mod clipboard {
     /// Other apps (clipboard managers, the app that just copied) may hold it briefly.
     fn open() -> Option<Open> {
         for _ in 0..20 {
+            // SAFETY: no preconditions; success is recorded by returning the guard.
             if unsafe { OpenClipboard(None) }.is_ok() {
                 return Some(Open);
             }
@@ -205,10 +224,11 @@ mod clipboard {
     // ponytail: copies every format into memory, so a huge Excel range or image copied
     // earlier makes the fallback slower. Lazy restore not possible: Ctrl+C overwrites it.
     pub fn snapshot() -> Option<Snapshot> {
-        let _c = open()?;
+        let open = open()?;
         let mut out = Vec::new();
         let mut f = 0;
         loop {
+            // SAFETY: the clipboard is open (`open` guard alive).
             f = unsafe { EnumClipboardFormats(f) };
             if f == 0 {
                 break;
@@ -216,63 +236,72 @@ mod clipboard {
             if GDI_FORMATS.contains(&f) {
                 continue;
             }
-            if let Ok(h) = unsafe { GetClipboardData(f) } {
-                if let Some(b) = bytes(HGLOBAL(h.0)) {
-                    out.push((f, b));
-                }
+            if let Some(b) = data(&open, f) {
+                out.push((f, b));
             }
         }
         Some(out)
     }
 
     pub fn read_text() -> Option<String> {
-        let _c = open()?;
-        let h = unsafe { GetClipboardData(CF_UNICODETEXT.0 as u32) }.ok()?;
-        let b = bytes(HGLOBAL(h.0))?;
-        let units: Vec<u16> = b
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .take_while(|&c| c != 0)
-            .collect();
+        let open = open()?;
+        let b = data(&open, u32::from(CF_UNICODETEXT.0))?;
+        let (pairs, _) = b.as_chunks::<2>();
+        let units: Vec<u16> = pairs.iter().map(|&c| u16::from_le_bytes(c)).take_while(|&c| c != 0).collect();
         Some(String::from_utf16_lossy(&units))
     }
 
     pub fn restore(s: Snapshot) {
-        let Some(_c) = open() else { return };
-        unsafe {
-            let _ = EmptyClipboard();
-            for (f, b) in &s {
-                set(*f, b);
-            }
-            // Keeps Win+V history from logging the restore as a new entry.
-            set(RegisterClipboardFormatW(w!("ExcludeClipboardContentFromMonitorProcessing")), &[0]);
+        let Some(open) = open() else { return };
+        // SAFETY: the clipboard is open (`open` guard alive).
+        let _ = unsafe { EmptyClipboard() };
+        for (f, b) in &s {
+            set(&open, *f, b);
         }
+        // Keeps Win+V history from logging the restore as a new entry.
+        // SAFETY: `w!` yields a valid null-terminated wide string.
+        let exclude = unsafe { RegisterClipboardFormatW(w!("ExcludeClipboardContentFromMonitorProcessing")) };
+        set(&open, exclude, &[0]);
     }
 
-    fn bytes(h: HGLOBAL) -> Option<Vec<u8>> {
-        unsafe {
-            let p = GlobalLock(h);
-            if p.is_null() {
-                return None;
-            }
-            let v = std::slice::from_raw_parts(p as *const u8, GlobalSize(h)).to_vec();
-            let _ = GlobalUnlock(h);
-            Some(v)
-        }
-    }
-
-    unsafe fn set(f: u32, b: &[u8]) {
-        let Ok(h) = GlobalAlloc(GMEM_MOVEABLE, b.len().max(1)) else { return };
-        let p = GlobalLock(h);
+    /// Copy of one clipboard format's bytes. The `Open` guard proves the clipboard is open.
+    fn data(_open: &Open, f: u32) -> Option<Vec<u8>> {
+        // SAFETY: the clipboard is open. The handle stays owned by the clipboard.
+        let h = HGLOBAL(unsafe { GetClipboardData(f) }.ok()?.0);
+        // SAFETY: GlobalLock rejects handles that are not global memory (returns null), so
+        // private and GDI formats that slipped through are skipped, not misread.
+        let p = unsafe { GlobalLock(h) };
         if p.is_null() {
-            let _ = GlobalFree(Some(h));
+            return None;
+        }
+        // SAFETY: a locked block is readable for GlobalSize bytes until GlobalUnlock; it is
+        // copied out before unlocking.
+        let v = unsafe { std::slice::from_raw_parts(p.cast::<u8>(), GlobalSize(h)) }.to_vec();
+        // SAFETY: pairs with the successful GlobalLock above.
+        let _ = unsafe { GlobalUnlock(h) };
+        Some(v)
+    }
+
+    /// Puts one format on the clipboard. The `Open` guard proves the clipboard is open.
+    fn set(_open: &Open, f: u32, b: &[u8]) {
+        // SAFETY: plain allocation; at least 1 byte so empty data still gets a handle.
+        let Ok(h) = (unsafe { GlobalAlloc(GMEM_MOVEABLE, b.len().max(1)) }) else { return };
+        // SAFETY: `h` was just allocated by us.
+        let p = unsafe { GlobalLock(h) };
+        if p.is_null() {
+            // SAFETY: still ours; nothing else references it.
+            let _ = unsafe { GlobalFree(Some(h)) };
             return;
         }
-        std::ptr::copy_nonoverlapping(b.as_ptr(), p as *mut u8, b.len());
-        let _ = GlobalUnlock(h);
-        // On success the system owns the memory; on failure it is still ours to free.
-        if SetClipboardData(f, Some(HANDLE(h.0))).is_err() {
-            let _ = GlobalFree(Some(h));
+        // SAFETY: the block holds at least b.len() bytes and cannot overlap `b`.
+        unsafe { std::ptr::copy_nonoverlapping(b.as_ptr(), p.cast::<u8>(), b.len()) };
+        // SAFETY: pairs with the GlobalLock above.
+        let _ = unsafe { GlobalUnlock(h) };
+        // SAFETY: the clipboard is open. On success the system owns the memory; on failure it
+        // is still ours to free.
+        if unsafe { SetClipboardData(f, Some(HANDLE(h.0))) }.is_err() {
+            // SAFETY: the clipboard rejected it, so the memory is still ours.
+            let _ = unsafe { GlobalFree(Some(h)) };
         }
     }
 }
