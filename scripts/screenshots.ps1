@@ -45,7 +45,7 @@ function Capture($Theme) {
   $fg = if ($dark) { [System.Drawing.Color]::FromArgb(230, 230, 230) } else { [System.Drawing.Color]::FromArgb(30, 30, 30) }
   $form = New-Object System.Windows.Forms.Form
   $form.FormBorderStyle = 'None'; $form.TopMost = $true; $form.StartPosition = 'Manual'
-  $form.Location = New-Object System.Drawing.Point(200, 150); $form.Size = New-Object System.Drawing.Size(400, 190)
+  $form.Location = New-Object System.Drawing.Point(200, 150); $form.Size = New-Object System.Drawing.Size(360, 190)
   $form.BackColor = $bg; $form.Padding = New-Object System.Windows.Forms.Padding(24, 22, 24, 22)
   $tb = New-Object System.Windows.Forms.RichTextBox
   $tb.Dock = 'Fill'; $tb.BorderStyle = 'None'; $tb.BackColor = $bg; $tb.ForeColor = $fg; $tb.ScrollBars = 'None'; $tb.HideSelection = $false
@@ -61,7 +61,7 @@ function Capture($Theme) {
       Unlock; [void][W]::SetForegroundWindow($form.Handle); $tb.Focus()
       $start = $tb.Text.IndexOf($sentence); $tb.Select($start, $sentence.Length)
       # Cursor where a mouse selection would end: the popup opens next to it.
-      $pt = $tb.PointToScreen($tb.GetPositionFromCharIndex($start + 3)); [void][W]::SetCursorPos($pt.X, $pt.Y + 26)
+      $pt = $tb.PointToScreen($tb.GetPositionFromCharIndex($start)); [void][W]::SetCursorPos($pt.X, $pt.Y + 26)
       [System.Windows.Forms.SendKeys]::SendWait("%q")
     }
     if ($script:step -eq 3) {
@@ -102,17 +102,22 @@ try {
 } finally { [IO.File]::WriteAllText($conf, $original) }
 Build; Capture "light"
 
-# Compose: light and dark side by side on a gradient, 880 px wide (the README content width),
+# Compose: light and dark side by side on a gradient, 830 px wide (README content width is about 838),
 # so GitHub shows the image 1:1.
 $ErrorActionPreference = "Continue"   # Edge reports progress on stderr
 $edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
 $profile = "$raw\edge-profile"
 function Compose($name, $tileW, $tileH) {
-  $h = $tileH + 2 * 44
+  # Tiles too wide to sit side by side overlap instead, the dark one in front and lower.
+  $gap = [Math]::Min(20, 830 - 2 * 30 - 2 * $tileW)
+  $shift = if ($gap -lt 0) { 20 } else { 0 }
+  $h = $tileH + 2 * 30 + 2 * $shift
   $html = @"
 <!doctype html><html><head><meta charset="utf-8"><style>
-  html, body { margin: 0; width: 880px; height: ${h}px; overflow: hidden; }
-  body { display: flex; align-items: center; justify-content: center; gap: 24px;
+  html, body { margin: 0; width: 830px; height: ${h}px; overflow: hidden; }
+  .tile:first-child { transform: translateY(-${shift}px); }
+  .tile + .tile { margin-left: ${gap}px; transform: translateY(${shift}px); }
+  body { display: flex; align-items: center; justify-content: center;
     background: radial-gradient(circle at 15% 10%, #ffc49b 0%, transparent 45%),
                 linear-gradient(135deg, #ff8a5c 0%, #ff5a36 50%, #c8385f 100%); }
   .tile { width: ${tileW}px; height: ${tileH}px; border-radius: 10px; overflow: hidden;
@@ -125,11 +130,11 @@ function Compose($name, $tileW, $tileH) {
 "@
   Set-Content "$raw\$name.html" $html -Encoding UTF8
   & $edge --headless=new --disable-gpu --hide-scrollbars --user-data-dir="$profile" `
-    --window-size="880,$h" --screenshot="$root\docs\$name.png" "file:///$($raw.Replace('\','/'))/$name.html" 2>$null | Out-Null
+    --window-size="830,$h" --screenshot="$root\docs\$name.png" "file:///$($raw.Replace('\','/'))/$name.html" 2>$null | Out-Null
   Start-Sleep 1
 }
 $s = [System.Drawing.Image]::FromFile("$raw\settings-light.png"); $sw = $s.Width; $sh = $s.Height; $s.Dispose()
-Compose "popup" 400 190
+Compose "popup" 360 190
 Compose "settings" $sw $sh
 Remove-Item $profile -Recurse -Force -ErrorAction SilentlyContinue
 "saved docs\popup.png and docs\settings.png"
