@@ -3,7 +3,8 @@
 #   powershell -ExecutionPolicy Bypass -File scripts/e2e-selection.ps1
 # Stops any running popslate first. Restores your clipboard text at the end.
 $ErrorActionPreference = "Stop"
-$exe = "$PSScriptRoot\..\src-tauri\target\debug\popslate.exe"
+# Set POPSLATE_EXE to test another build, e.g. the installed one.
+$exe = if ($env:POPSLATE_EXE) { $env:POPSLATE_EXE } else { "$PSScriptRoot\..\src-tauri\target\debug\popslate.exe" }
 $log = "$env:TEMP\popslate-e2e.log"
 
 # One case per run of this same script with -Case (needs its own STA process for WinForms).

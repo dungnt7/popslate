@@ -20,7 +20,9 @@
         "resizable": false,
         "maximizable": false,
         "minimizable": false,
-        "shadow": true
+        "shadow": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu",
+        "title": "Popslate"
       },
       {
         "label": "settings",
@@ -32,7 +34,9 @@
         "resizable": false,
         "center": true,
         "maximizable": false,
-        "minimizable": false
+        "minimizable": false,
+        "create": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu"
       }
     ],
     "security": {
@@ -48,6 +52,12 @@
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "dungnt7",
+    "windows": {
+      "nsis": {
+        "installerHooks": "installer-hooks.nsh"
+      }
+    }
   }
 }

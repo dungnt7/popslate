@@ -15,7 +15,7 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager, WindowEvent,
+    AppHandle, Manager, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -54,8 +54,17 @@ fn open_homepage() {
     let _ = std::process::Command::new("explorer").arg(env!("CARGO_PKG_HOMEPAGE")).spawn();
 }
 
+/// Settings is built on demand and destroyed on close (config: "create": false): each
+/// open window costs a WebView2 renderer process, and settings is rarely open.
 fn show_settings(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("settings") {
+    let win = app.get_webview_window("settings").or_else(|| {
+        let cfg = app.config().app.windows.iter().find(|w| w.label == "settings")?;
+        WebviewWindowBuilder::from_config(app, cfg)
+            .and_then(|b| b.build())
+            .inspect_err(|e| eprintln!("[settings] cannot open: {e}"))
+            .ok()
+    });
+    if let Some(w) = win {
         let _ = w.show();
         let _ = w.set_focus();
     }
@@ -156,8 +165,8 @@ fn main() {
             Ok(())
         })
         .on_window_event(|w, e| match e {
-            // Windows are pre-created and reused: hide on close, never destroy.
-            WindowEvent::CloseRequested { api, .. } => {
+            // The popup is pre-created and reused (Alt+F4 must not destroy it): hide instead.
+            WindowEvent::CloseRequested { api, .. } if w.label() == "popup" => {
                 api.prevent_close();
                 let _ = w.hide();
             }
