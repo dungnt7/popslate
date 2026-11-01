@@ -12,11 +12,25 @@ use std::{
     time::Instant,
 };
 use tauri::{
+    image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     AppHandle, Manager, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+
+/// Windows draws tray icons at 16 px (100% scaling), 20, 24 or 32 px (200%). Each size is
+/// rendered on its own (see `npm run icons`); a shrunk large icon looks blurry.
+// ponytail: picked once at startup; a display-scaling change needs an app restart.
+fn tray_icon(scale: f64) -> Image<'static> {
+    let png: &[u8] = match (16.0 * scale).round() as u32 {
+        ..=17 => include_bytes!("../icons/tray/16x16.png"),
+        18..=21 => include_bytes!("../icons/tray/20x20.png"),
+        22..=27 => include_bytes!("../icons/tray/24x24.png"),
+        _ => include_bytes!("../icons/tray/32x32.png"),
+    };
+    Image::from_bytes(png).expect("bundled tray icon")
+}
 
 fn show_settings(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("settings") {
@@ -106,7 +120,7 @@ fn main() {
                 ],
             )?;
             TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon(app.primary_monitor()?.map_or(1.0, |m| m.scale_factor())))
                 .tooltip("Popslate")
                 .menu(&menu)
                 .on_menu_event(|app, e| match e.id.as_ref() {

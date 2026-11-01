@@ -1,0 +1,9 @@
+<!-- Source of every app and tray icon. Regenerate all PNG/ICO files with: npm run icons
+     Drawn on a 16-unit grid so edges land on pixels at the 16 px tray size. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- Popup bubble, edge to edge so it does not look small in the tray. Tail bottom-left. -->
+  <path fill="#FF5A36" d="M3 0h10a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H7.5l-4 2v-2H3a3 3 0 0 1-3-3V3a3 3 0 0 1 3-3z"/>
+  <!-- Lightning bolt (speed). Point-symmetric around the bubble center (8, 7); arms ~3 units
+       thick so it still reads as a bolt at 16 px. -->
+  <path fill="#FFFFFF" d="M10 1.75 3.75 8.25H6.75L6 12.25 12.25 5.75H9.25z"/>
+</svg>

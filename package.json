@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "icons": "tauri icon src-tauri/icons/icon.svg && tauri icon src-tauri/icons/icon.svg -o src-tauri/icons/tray -p 20,24,32 && tauri icon src-tauri/icons/icon-16.svg -o src-tauri/icons/tray -p 16 && node -e \"for (const f of ['android', 'ios', 'icon.icns']) require('fs').rmSync('src-tauri/icons/' + f, { recursive: true, force: true })\""
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
