@@ -8,16 +8,14 @@
 
 Popslate is a small Windows app that translates text from any program (a browser, a PDF reader, Word, a chat window, a code editor) with Google Translate. It waits in the system tray until you need it. Most of its life is spent waiting, which it does very well.
 
-It is built around four goals:
+It is built around 4 goals:
 
 - **Simple.** One job, one shortcut. No accounts, no API keys, no features you have to learn first.
 - **Easy to Use.** Select, press the shortcut, read. The translation opens right next to your mouse.
 - **Fast.** The translation is usually on screen about 0.15 seconds after you press the keys.
 - **Stable.** It works the same way every time. When it borrows your clipboard, it puts your things back. Not every guest does that.
 
-| Light | Dark |
-|---|---|
-| ![Popup in light theme](docs/popup-light.png) | ![Popup in dark theme](docs/popup-dark.png) |
+![The Popslate popup next to selected text, in the light and the dark theme](docs/popup.png)
 
 ## Install
 
@@ -47,9 +45,7 @@ If the text is already in your language (for example, Vietnamese text when you t
 
 Click the Popslate icon in the system tray and choose **Settings**.
 
-| Light | Dark |
-|---|---|
-| ![Settings in light theme](docs/settings-light.png) | ![Settings in dark theme](docs/settings-dark.png) |
+![The Popslate settings window, in the light and the dark theme](docs/settings.png)
 
 - **Translate to:** the language you want to read.
 - **If already in it:** the language to use when the text is already in your "Translate to" language.

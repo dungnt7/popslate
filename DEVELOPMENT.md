@@ -50,6 +50,7 @@ npm run dev
 | `cargo test -- --ignored` (in `src-tauri`) | Live test against Google Translate |
 | `cargo clippy --all-targets -- -W clippy::undocumented_unsafe_blocks` (in `src-tauri`) | Lints, including a `// SAFETY:` comment on every `unsafe` block |
 | `powershell -ExecutionPolicy Bypass -File scripts/e2e-selection.ps1` | End-to-end test (see [End-to-End Test](#end-to-end-test)) |
+| `powershell -ExecutionPolicy Bypass -File scripts/screenshots.ps1` | Regenerate the README screenshots in light and dark. Needs Edge and 100% display scaling. Don't touch the keyboard or mouse while it runs |
 
 ## Project Layout
 
@@ -66,6 +67,7 @@ ui/
 src-tauri/icons/icon.svg, icon-16.svg   icon sources
 src-tauri/installer-hooks.nsh           NSIS uninstall hook
 scripts/e2e-selection.ps1               end-to-end test
+scripts/screenshots.ps1                 README screenshots
 docs/                                   README screenshots
 ```
 
