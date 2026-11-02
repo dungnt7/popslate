@@ -4,9 +4,25 @@
 
 <h1 align="center">Popslate</h1>
 
-<p align="center">Select text anywhere, press <kbd>Alt</kbd>+<kbd>Q</kbd>, read the translation.</p>
+<p align="center"><b>Instant translation for Windows.</b><br>Select text in any app, press <kbd>Alt</kbd>+<kbd>Q</kbd>, read the translation next to your mouse.</p>
 
-Popslate is a small Windows app that translates text from any program (a browser, a PDF reader, Word, a chat window, a code editor) with Google Translate. It waits in the system tray until you need it. Most of its life is spent waiting, which it does very well.
+<p align="center">
+  <a href="https://github.com/dungnt7/popslate/releases/latest"><img src="https://img.shields.io/github/v/release/dungnt7/popslate" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10 and 11">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/dungnt7/popslate" alt="MIT license"></a>
+</p>
+
+<p align="center"><a href="https://github.com/dungnt7/popslate/releases/latest"><b>Download for Windows</b></a> · 3 MB installer · free · no account, no API key</p>
+
+![The Popslate popup next to selected text, in the light and the dark theme](docs/popup.png)
+
+## Why Popslate
+
+Reading in a second language usually goes like this: copy, open a browser tab, paste into a translator, read, switch back, find your place again. Do that thirty times a day and it adds up.
+
+Popslate turns it into one shortcut. The translation shows up where you are already reading, in about 0.15 seconds, and goes away with <kbd>Esc</kbd>. It works in any program: a browser, a PDF reader, Word, a chat window, a code editor. It is for anyone who reads a lot in a language that isn't their first: students, developers reading docs and error messages, people working with documents or colleagues from abroad.
+
+Text is translated with Google Translate. Nothing else leaves your PC, and Popslate keeps no history. It is open source (MIT), written in Rust with Tauri, and waits in the system tray until you need it.
 
 It is built around 4 goals:
 
@@ -14,8 +30,6 @@ It is built around 4 goals:
 - **Easy to Use.** Select, press the shortcut, read. The translation opens right next to your mouse.
 - **Fast.** The translation is usually on screen about 0.15 seconds after you press the keys.
 - **Stable.** It works the same way every time. When it borrows your clipboard, it puts your things back. Not every guest does that.
-
-![The Popslate popup next to selected text, in the light and the dark theme](docs/popup.png)
 
 ## Install
 
